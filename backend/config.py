@@ -31,11 +31,19 @@ OAUTH_CLIENT_ID = os.getenv("OAUTH_CLIENT_ID")
 OAUTH_CLIENT_SECRET = os.getenv("OAUTH_CLIENT_SECRET")
 OAUTH_REDIRECT_URI = os.getenv("OAUTH_REDIRECT_URI", "https://monitor.42roma.it/callback")
 
+# === Logging configuration ===
+# Maximum size for log rotation (bytes) and number of backups
+LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))  # 10 MiB
+LOG_BACKUP_COUNT = int(os.getenv("LOG_BACKUP_COUNT", "5"))
+
 # === SSL e host ===
 SSL_CERT_PATH = os.getenv("SSL_CERT_PATH", "/etc/ssl/42roma.it.crt")
 SSL_KEY_PATH = os.getenv("SSL_KEY_PATH", "/etc/ssl/wildcard.key")
 HOST = os.getenv("FLASK_HOST", "monitor.42roma.it")
 PORT = int(os.getenv("FLASK_PORT", "443"))
+
+# === Runtime flags ===
+DEBUG_MODE = os.getenv("FLASK_DEBUG", "false").lower() == "true"
 
 # === Servizi esterni ===
 SITE = os.getenv("URL", "")
