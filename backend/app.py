@@ -13,8 +13,6 @@ import os
 import secrets
 import string
 from datetime import datetime, timedelta
-from pathlib import Path
-import difflib
 import requests
 import urllib3
 import yaml
@@ -489,4 +487,3 @@ def toggle_maintenance():
 # === Main ===
 if __name__ == "__main__":
     app.run(host=HOST, port=PORT, ssl_context=(SSL_CERT_PATH, SSL_KEY_PATH), debug=True)
-
