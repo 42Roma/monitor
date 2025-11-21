@@ -484,4 +484,4 @@ def toggle_maintenance():
 
 # === Main ===
 if __name__ == "__main__":
-    app.run(host=HOST, port=PORT, ssl_context=(SSL_CERT_PATH, SSL_KEY_PATH), debug=DEBUG_MODE)
+    app.run(host=HOST, port=PORT, ssl_context=(SSL_CERT_PATH, SSL_KEY_PATH), debug=True)

@@ -42,9 +42,6 @@ SSL_KEY_PATH = os.getenv("SSL_KEY_PATH", "/etc/ssl/wildcard.key")
 HOST = os.getenv("FLASK_HOST", "monitor.42roma.it")
 PORT = int(os.getenv("FLASK_PORT", "443"))
 
-# === Runtime flags ===
-DEBUG_MODE = os.getenv("FLASK_DEBUG", "false").lower() == "true"
-
 # === Servizi esterni ===
 SITE = os.getenv("URL", "")
 OFFLINE_LOCATIONS = f"{SITE}/offline"
