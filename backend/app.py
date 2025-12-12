@@ -9,6 +9,7 @@ Handles:
 
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 import os
 import secrets
 import string
@@ -43,6 +44,17 @@ app.config.update(
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Configure rotating file handler using config values
+try:
+    file_handler = RotatingFileHandler(LOG_FILE, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT)
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    logger.setLevel(logging.INFO)
+except Exception:
+    # If logging init fails, continue with default logger
+    logger.exception("Failed to initialize rotating file handler")
+
 # === Utility comuni ===
 def load_json(path, default=None):
     try:
@@ -55,10 +67,6 @@ def save_json(path, data):
     with open(path, "w") as f:
         json.dump(data, f, indent=4)
 
-def log_action(msg):
-    with open(config.LOG_FILE, "a") as f:
-        f.write(f"{datetime.now().isoformat()} - {msg}\n")
-
 def require_dashboard_access():
     """Ensure the user is logged in and authorised to manage announcements."""
     if "user_login" not in session:
@@ -68,10 +76,8 @@ def require_dashboard_access():
         return None
 
     user_login = session.get("user_login")
-        if user_login not in config.AUTHORIZED_USERS:
-        log_action(
-            f"Accesso non autorizzato da {user_login or 'sconosciuto'} ({request.remote_addr})"
-        )
+    if user_login not in config.AUTHORIZED_USERS:
+        logger.info(f"Accesso non autorizzato da {user_login or 'sconosciuto'} ({request.remote_addr})")
         return "Unauthorized", 403
 
     return None
@@ -320,7 +326,7 @@ def create_announcement():
             "created_at": datetime.utcnow().isoformat(),
         }
         save_announcement(announcement_id, payload)
-        log_action(f"{author} ha creato l'annuncio {announcement_id}")
+        logger.info(f"{author} ha creato l'annuncio {announcement_id}")
         return redirect(url_for("edit_announcements"))
 
     return render_template("announcement.html")
@@ -353,11 +359,9 @@ def edit_announcement(announcement_id):
         session.get("user_kind") != "admin"
         and announcement.get("created_by") != user_login
     ):
-        log_action(
-            f"{user_login} ha tentato di modificare annuncio {announcement_id} senza permessi"
-        )
+        logger.info(f"{user_login} ha tentato di modificare annuncio {announcement_id} senza permessi")
         return "Unauthorized", 403
-
+    # Handle form submission when editing an announcement
     if request.method == "POST":
         title = request.form.get("title", "").strip()
         description = request.form.get("description", "").strip()
@@ -389,7 +393,7 @@ def edit_announcement(announcement_id):
             }
         )
         save_announcement(announcement_id, {k: v for k, v in announcement.items() if k != "id"})
-        log_action(f"{user_login} ha aggiornato l'annuncio {announcement_id}")
+        logger.info(f"{user_login} ha aggiornato l'annuncio {announcement_id}")
         return redirect(url_for("edit_announcements"))
 
     return render_template("edit_announcement.html", announcement=announcement)
@@ -397,14 +401,14 @@ def edit_announcement(announcement_id):
 @app.route("/staff")
 def staff_dashboard():
     if session.get("user_kind") != "admin":
-        log_action(f"Accesso staff non autorizzato da {session.get('user_login')} ({request.remote_addr})")
+        logger.info(f"Accesso staff non autorizzato da {session.get('user_login')} ({request.remote_addr})")
         return redirect(url_for("choose"))
     return render_template("staff_dashboard.html", NAGIOS_URL=config.NAGIOS_URL)
 
 @app.route("/banner_management", methods=["GET", "POST"])
 def banner_management():
     if session.get("user_kind") != "admin":
-        log_action(f"Tentativo gestione banner non autorizzato da {session.get('user_login')}")
+        logger.info(f"Tentativo gestione banner non autorizzato da {session.get('user_login')}")
         return "Unauthorized", 403
 
     banner = load_json(config.BANNER_FILE, {"visible": config.BANNER_DEFAULT_VISIBLE, "text": config.BANNER_DEFAULT_TEXT})
@@ -412,7 +416,7 @@ def banner_management():
         banner["visible"] = "show_banner" in request.form
         banner["text"] = request.form.get("banner_text", "")
         save_json(config.BANNER_FILE, banner)
-        log_action(f"{session['user_login']} ha aggiornato il banner")
+        logger.info(f"{session['user_login']} ha aggiornato il banner")
         return redirect(url_for("banner_management"))
 
     return render_template("banner_management.html", banner_visible=banner["visible"], banner_text=banner["text"])
@@ -423,9 +427,7 @@ def update_banner():
         return redirect(url_for("login"))
 
     if session.get("user_kind") != "admin":
-        log_action(
-            f"Tentativo aggiornamento banner non autorizzato da {session.get('user_login')} ({request.remote_addr})"
-        )
+        logger.info(f"Tentativo aggiornamento banner non autorizzato da {session.get('user_login')} ({request.remote_addr})")
         return "Unauthorized", 403
 
     banner_settings = {
@@ -433,20 +435,18 @@ def update_banner():
         "text": request.form.get("banner_text", ""),
     }
     save_json(config.BANNER_FILE, banner_settings)
-    log_action(f"{session.get('user_login')} ha aggiornato il banner")
+    logger.info(f"{session.get('user_login')} ha aggiornato il banner")
     return redirect(url_for("banner_management"))
 
 @app.route('/maintenance')
 def staff_maintenance():
     if 'user_login' not in session:
-        with open('log.txt', 'a') as f:
-            f.write(f"{datetime.now().isoformat()} - Tentativo di accesso non autorizzato alla pagina staff da IP {request.remote_addr}\n")
-            return redirect(url_for('login'))
+        logger.info(f"Tentativo di accesso non autorizzato alla pagina staff da IP {request.remote_addr}")
+        return redirect(url_for('login'))
     user_kind = session.get('user_kind')
     if user_kind != 'admin':
-        with open('log.txt', 'a') as f:
-            f.write(f"{datetime.now().isoformat()} - Tentativo di accesso non autorizzato alla pagina staff da {session.get('user_login')} (IP: {request.remote_addr})\n")
-            return "Unauthorized", 403
+        logger.info(f"Tentativo di accesso non autorizzato alla pagina staff da {session.get('user_login')} (IP: {request.remote_addr})")
+        return "Unauthorized", 403
     maintenance_pcs = []
     if os.path.exists('maintenance.json'):
         with open('maintenance.json', 'r') as f:
@@ -459,14 +459,12 @@ def staff_maintenance():
 @app.route('/toggle_maintenance', methods=['POST'])
 def toggle_maintenance():
     if 'user_login' not in session:
-        with open('log.txt', 'a') as f:
-            f.write(f"{datetime.now().isoformat()} - Tentativo di modifica manutenzione non autorizzato da IP {request.remote_addr}\n")
-            return redirect(url_for('login'))
+        logger.info(f"Tentativo di modifica manutenzione non autorizzato da IP {request.remote_addr}")
+        return redirect(url_for('login'))
     user_kind = session.get('user_kind')
     if user_kind != 'admin':
-        with open('log.txt', 'a') as f:
-            f.write(f"{datetime.now().isoformat()} - Tentativo di modifica manutenzione non autorizzato da {session.get('user_login')} (IP: {request.remote_addr})\n")
-            return jsonify({"error": "Not authorized"}), 403
+        logger.info(f"Tentativo di modifica manutenzione non autorizzato da {session.get('user_login')} (IP: {request.remote_addr})")
+        return jsonify({"error": "Not authorized"}), 403
     pc_id = request.form.get('pc_id')
     action = request.form.get('action', 'add')
     if not pc_id:
@@ -480,12 +478,10 @@ def toggle_maintenance():
                 maintenance_pcs = []
     if action == 'remove' and pc_id in maintenance_pcs:
         maintenance_pcs.remove(pc_id)
-        with open('log.txt', 'a') as f:
-            f.write(f"{datetime.now().isoformat()} - {session.get('user_login')} ha rimosso {pc_id} dalla manutenzione\n")
+        logger.info(f"{session.get('user_login')} ha rimosso {pc_id} dalla manutenzione")
     elif action == 'add' and pc_id not in maintenance_pcs:
         maintenance_pcs.append(pc_id)
-        with open('log.txt', 'a') as f:
-            f.write(f"{datetime.now().isoformat()} - {session.get('user_login')} ha aggiunto {pc_id} alla manutenzione\n")
+        logger.info(f"{session.get('user_login')} ha aggiunto {pc_id} alla manutenzione")
     with open('maintenance.json', 'w') as f:
         json.dump(maintenance_pcs, f)
     return jsonify({"success": True, "maintenance_pcs": maintenance_pcs})
