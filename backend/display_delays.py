@@ -263,7 +263,7 @@ def page_duration_summary(page_id, cfg=None, sponsor_count=None):
     kind = page["duration_kind"]
     key = page["delay_key"]
     if kind == "fixed":
-        return "{}s".format(cfg[key])
+        return f"{cfg[key]}s"
     if kind == "cc_steps":
         total = cfg["cc_step_seconds"] * cfg["cc_ranks"]
         return "{}s × {} = {}s".format(cfg["cc_step_seconds"], cfg["cc_ranks"], total)
@@ -273,8 +273,8 @@ def page_duration_summary(page_id, cfg=None, sponsor_count=None):
         per = cfg["sponsors_seconds"]
         if sponsor_count:
             total = per * sponsor_count
-            return "{}s × {} = {}s".format(per, sponsor_count, total)
-        return "{}s × n sponsor".format(per)
+            return f"{per}s × {sponsor_count} = {total}s"
+        return f"{per}s × n sponsor"
     return "—"
 
 
@@ -366,10 +366,8 @@ def save_display_config(form_data, cycle_order=None):
             value = int(form_data[key])
         except (TypeError, ValueError):
             continue
-        if value < 1:
-            value = 1
-        if value > 3600:
-            value = 3600
+        value = max(value, 1)
+        value = min(value, 3600)
         saved_delays[key] = value
 
     if cycle_order is None:

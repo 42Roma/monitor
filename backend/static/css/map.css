@@ -149,13 +149,91 @@ body {
     align-items: center;
 }
 
-.grid-box>div:first-child {
+.grid-box>div:first-child,
+.grid-box .cluster-title {
     font-size: clamp(1.75rem, 2.2vw, 2.5rem);
     font-weight: bold;
     text-align: center;
     margin-bottom: 0.75rem;
     color: var(--text-muted);
     width: 100%;
+}
+
+.grid-box--exam {
+    position: relative;
+    background:
+        linear-gradient(180deg, rgba(254, 194, 96, 0.18), rgba(237, 128, 121, 0.12)),
+        var(--bg-surface);
+    box-shadow:
+        inset 0 0 0 3px rgba(254, 194, 96, 0.95),
+        0 0 28px rgba(237, 128, 121, 0.45);
+    animation: exam-box-pulse 1.8s ease-in-out infinite;
+}
+
+.grid-box--exam .cluster-title {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+    color: #fff7e8;
+    text-shadow:
+        0 0 8px rgba(254, 194, 96, 0.9),
+        0 0 18px rgba(237, 128, 121, 0.75);
+    animation: exam-title-glow 1.4s ease-in-out infinite;
+}
+
+.grid-box--exam .cluster-title__name {
+    font-size: 1.05em;
+    letter-spacing: 0.04em;
+    color: #ffe8b8;
+}
+
+.grid-box--exam .cluster-title__exam {
+    display: inline-block;
+    padding: 0.2em 0.7em;
+    border-radius: 999px;
+    font-size: 0.58em;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #1e1e2d;
+    background: linear-gradient(90deg, #fec260, #ed8079, #fec260);
+    background-size: 200% 100%;
+    box-shadow: 0 0 16px rgba(254, 194, 96, 0.85);
+    animation: exam-badge-shine 1.6s linear infinite;
+}
+
+@keyframes exam-box-pulse {
+    0%, 100% {
+        box-shadow:
+            inset 0 0 0 3px rgba(254, 194, 96, 0.85),
+            0 0 18px rgba(237, 128, 121, 0.35);
+    }
+    50% {
+        box-shadow:
+            inset 0 0 0 4px rgba(255, 220, 140, 1),
+            0 0 36px rgba(254, 194, 96, 0.7);
+    }
+}
+
+@keyframes exam-title-glow {
+    0%, 100% {
+        text-shadow:
+            0 0 6px rgba(254, 194, 96, 0.7),
+            0 0 14px rgba(237, 128, 121, 0.55);
+        transform: scale(1);
+    }
+    50% {
+        text-shadow:
+            0 0 12px rgba(255, 230, 160, 1),
+            0 0 28px rgba(254, 194, 96, 0.95);
+        transform: scale(1.03);
+    }
+}
+
+@keyframes exam-badge-shine {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 200% 50%; }
 }
 
 .cluster-grid {
@@ -1069,26 +1147,30 @@ body {
         height: 2.8vw;
     }
 
-    .grid-box>div:first-child {
+    .grid-box>div:first-child,
+    .grid-box .cluster-title {
         font-size: 2.5rem;
     }
 }
 
 /* Grid box title responsiveness - solo per monitor a bassa risoluzione */
 @media screen and (max-width: 1600px) and (max-height: 1080px) {
-    .grid-box>div:first-child {
+    .grid-box>div:first-child,
+    .grid-box .cluster-title {
         font-size: 1.3rem;
     }
 }
 
 @media screen and (max-width: 1400px) {
-    .grid-box>div:first-child {
+    .grid-box>div:first-child,
+    .grid-box .cluster-title {
         font-size: 1.2rem;
     }
 }
 
 @media screen and (max-width: 1200px) {
-    .grid-box>div:first-child {
+    .grid-box>div:first-child,
+    .grid-box .cluster-title {
         font-size: 1.1rem;
     }
 }

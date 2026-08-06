@@ -319,3 +319,4 @@ backend/static/images/
 templates/workstations.j2.bkp.html
 backend/static/svg/
 backend/static/svg/*.svg
+backend/log.tx*

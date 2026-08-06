@@ -1,13 +1,20 @@
-{% set clusters = [
-  {"name": "Piano -1", "prefix": "c1", "rows": [7, 6, 5, 4, 3, 2, 1], "hidden_rows": [], "stations_by_row": {1: 6}},
-  {"name": "Piano  0", "prefix": "c2", "rows": [7, 6, 5, 4, 3, 2, 1], "hidden_rows": [7], "stations_by_row": {}},
-  {"name": "Piano +1", "prefix": "c3", "rows": [7, 6, 5, 4, 3, 2, 1], "hidden_rows": [7], "stations_by_row": {}}
-] %}
+{% set clusters = clusters|default([
+  {"name": "Cluster 1", "prefix": "c1", "rows": [7, 6, 5, 4, 3, 2, 1], "hidden_rows": [], "stations_by_row": {1: 6}, "exam_mode": false},
+  {"name": "Cluster 2", "prefix": "c2", "rows": [7, 6, 5, 4, 3, 2, 1], "hidden_rows": [7], "stations_by_row": {}, "exam_mode": false},
+  {"name": "Cluster 3", "prefix": "c3", "rows": [7, 6, 5, 4, 3, 2, 1], "hidden_rows": [7], "stations_by_row": {}, "exam_mode": false}
+]) %}
 <div class="monitor-sprite" aria-hidden="true">{{ svg_content|safe }}</div>
 <div class="grids">
   {% for cluster in clusters %}
-  <div class="grid-box">
-    <div>{{ cluster.name }}</div>
+  <div class="grid-box{% if cluster.exam_mode %} grid-box--exam{% endif %}">
+    <div class="cluster-title">
+      {% if cluster.exam_mode %}
+      <span class="cluster-title__name">{{ cluster.name|replace(' - Exam mode', '') }}</span>
+      <span class="cluster-title__exam">Exam mode</span>
+      {% else %}
+      {{ cluster.name }}
+      {% endif %}
+    </div>
     <div class="cluster-grid">
       <div class="label"></div>
       {% for station in range(8, 0, -1) %}

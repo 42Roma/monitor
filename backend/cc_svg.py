@@ -39,9 +39,7 @@ def prepare_cc_svg(raw_svg, *, use_mastery_svg, mastery_fully_visible):
     full_viewbox = extract_viewbox(raw_svg)
     cc_only_viewbox = compute_cc_only_viewbox() if use_mastery_svg else full_viewbox
 
-    if not use_mastery_svg:
-        active_viewbox = full_viewbox
-    elif mastery_fully_visible:
+    if not use_mastery_svg or mastery_fully_visible:
         active_viewbox = full_viewbox
     else:
         active_viewbox = cc_only_viewbox
