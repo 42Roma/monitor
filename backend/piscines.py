@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import logging
 import re
-from datetime import date
+from datetime import UTC, date, datetime
 from html import unescape
 from pathlib import Path
 
@@ -93,7 +93,7 @@ def _parse_italian_date(day: str, month: str, year: str) -> date | None:
 
 
 def _months_until(start: date, today: date | None = None) -> int:
-    today = today or date.today()
+    today = today or datetime.now(UTC).date()
     if start <= today:
         return 0
     months = (start.year - today.year) * 12 + (start.month - today.month)
@@ -121,7 +121,7 @@ def build_piscine_countdown(
     if not start:
         return {"countdown_text": "—", "countdown_tier": "red"}
 
-    today = date.today()
+    today = datetime.now(UTC).date()
     days_left = (start - today).days
     months_left = _months_until(start, today)
 

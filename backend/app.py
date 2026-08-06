@@ -9,37 +9,40 @@ Handles:
 
 import json
 import logging
-from logging.handlers import RotatingFileHandler
 import os
 import secrets
-import sys
 import string
+import sys
 import threading
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
+from logging.handlers import RotatingFileHandler
+
 import requests
 import urllib3
 import yaml
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 try:
-    from . import cc_svg
-    from . import config
-    from . import display_delays
-    from . import event_summaries
-    from . import network_schools
-    from . import piscines
-    from . import pictures_assets
-    from . import sponsors
-    from . import student_stats
+    from . import (
+        cc_svg,
+        config,
+        display_delays,
+        event_summaries,
+        network_schools,
+        pictures_assets,
+        piscines,
+        sponsors,
+        student_stats,
+    )
 except ImportError:
     import cc_svg  # type: ignore
     import config  # type: ignore
     import display_delays  # type: ignore
     import event_summaries  # type: ignore
     import network_schools  # type: ignore
-    import piscines  # type: ignore
     import pictures_assets  # type: ignore
+    import piscines  # type: ignore
     import sponsors  # type: ignore
     import student_stats  # type: ignore
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -89,8 +92,10 @@ def setup_logging():
         )
         file_handler.setFormatter(formatter)
         root.addHandler(file_handler)
-    except Exception:
-        logging.exception("Failed to initialize rotating file handler")
+    except OSError:
+        logging.getLogger(__name__).exception(
+            "Failed to initialize rotating file handler"
+        )
 
     if not any(isinstance(h, logging.StreamHandler) for h in root.handlers):
         # stdout → journalctl (systemd non mostra stderr da uv/python)
@@ -134,6 +139,110 @@ def load_location_list(path, root_key):
         return []
 
 
+def normalize_used_entries(items):
+    """Accept legacy ID strings or ``{location, user}`` dicts."""
+    used_pcs = []
+    users_by_pc = {}
+    for item in items or []:
+        if isinstance(item, str):
+            loc = item.strip()
+            if loc:
+                used_pcs.append(loc)
+            continue
+        if isinstance(item, dict):
+            loc = str(item.get("location") or item.get("id") or "").strip()
+            if not loc:
+                continue
+            used_pcs.append(loc)
+            users_by_pc[loc] = str(item.get("user") or "").strip()
+    return used_pcs, users_by_pc
+
+
+def exam_mode_cluster_prefixes(users_by_pc, *, min_exam_pcs=2):
+    """Prefixes (c1/c2/c3) with at least ``min_exam_pcs`` seats logged as ``exam``."""
+    counts = {"c1": 0, "c2": 0, "c3": 0}
+    for loc, user in (users_by_pc or {}).items():
+        if str(user).strip().lower() != "exam":
+            continue
+        prefix = loc[:2] if len(loc) >= 2 else ""
+        if prefix in counts:
+            counts[prefix] += 1
+    return {prefix for prefix, count in counts.items() if count >= min_exam_pcs}
+
+
+CLUSTER_MAP_DEFS = [
+    {
+        "name": "Floor -1",
+        "prefix": "c1",
+        "rows": [7, 6, 5, 4, 3, 2, 1],
+        "hidden_rows": [],
+        "stations_by_row": {1: 6},
+    },
+    {
+        "name": "Floor  0",
+        "prefix": "c2",
+        "rows": [7, 6, 5, 4, 3, 2, 1],
+        "hidden_rows": [7],
+        "stations_by_row": {},
+    },
+    {
+        "name": "Floor +1",
+        "prefix": "c3",
+        "rows": [7, 6, 5, 4, 3, 2, 1],
+        "hidden_rows": [7],
+        "stations_by_row": {},
+    },
+]
+
+
+def cluster_station_ids(cluster):
+    """All real workstation IDs for a cluster layout definition."""
+    ids = []
+    stations_by_row = cluster.get("stations_by_row") or {}
+    hidden_rows = set(cluster.get("hidden_rows") or [])
+    for row in cluster.get("rows") or []:
+        if row in hidden_rows:
+            continue
+        station_count = int(stations_by_row.get(row, 8))
+        for station in range(1, station_count + 1):
+            ids.append(f"{cluster['prefix']}r{row}s{station}")
+    return ids
+
+
+def is_cluster_dark(cluster, offline_pcs):
+    """
+    True when every station in the cluster is offline except possibly ``cXr1s1``.
+
+    That leftover seat is treated as a leftover powered host, so the whole
+    cluster map is removed from the monitor display.
+    """
+    offline = set(offline_pcs or [])
+    keep_id = f"{cluster['prefix']}r1s1"
+    others = [sid for sid in cluster_station_ids(cluster) if sid != keep_id]
+    if not others:
+        return False
+    return all(sid in offline for sid in others)
+
+
+def build_cluster_map_defs(exam_prefixes=None, offline_pcs=None):
+    exam_prefixes = exam_prefixes or set()
+    clusters = []
+    for cluster in CLUSTER_MAP_DEFS:
+        if is_cluster_dark(cluster, offline_pcs):
+            continue
+        name = cluster["name"]
+        if cluster["prefix"] in exam_prefixes:
+            name = f"{name} - Exam mode"
+        clusters.append(
+            {
+                **cluster,
+                "name": name,
+                "exam_mode": cluster["prefix"] in exam_prefixes,
+            }
+        )
+    return clusters
+
+
 def build_location_stats(offline_pcs, used_pcs, maintenance_pcs):
     total = config.TOTAL_WORKSTATIONS
     offline_count = len(offline_pcs)
@@ -154,13 +263,18 @@ def build_location_stats(offline_pcs, used_pcs, maintenance_pcs):
 def get_location_dashboard_data():
     maintenance_pcs = load_json(config.MAINTENANCE_FILE, default=[])
     offline_pcs = load_location_list(config.OFFLINE_YAML, "offline")
-    used_pcs = load_location_list(config.USED_YAML, "used")
+    used_raw = load_location_list(config.USED_YAML, "used")
+    used_pcs, users_by_pc = normalize_used_entries(used_raw)
+    exam_prefixes = exam_mode_cluster_prefixes(users_by_pc)
     location_stats = build_location_stats(offline_pcs, used_pcs, maintenance_pcs)
     return {
         "maintenance_pcs": maintenance_pcs,
         "offline_pcs": offline_pcs,
         "used_pcs": used_pcs,
         "online_pcs": used_pcs,
+        "used_users": users_by_pc,
+        "exam_mode_clusters": sorted(exam_prefixes),
+        "clusters": build_cluster_map_defs(exam_prefixes, offline_pcs),
         "location_stats": location_stats,
     }
 
@@ -199,7 +313,7 @@ def _count_by_cluster(pc_list):
 
 
 def build_cluster_distribution(used_pcs):
-    labels = ["Piano	-1", "Piano	0", "Piano	+1"]
+    labels = ["Floor -1", "Floor  0", "Floor +1"]
     used = _count_by_cluster(used_pcs)
     return {"labels": labels, "values": [used["c1"], used["c2"], used["c3"]]}
 
@@ -208,7 +322,7 @@ def build_usage_grouped_bars(used_pcs):
     used = _count_by_cluster(used_pcs)
     keys = ["c1", "c2", "c3"]
     return {
-        "labels": ["Piano	-1", "Piano   0", "Piano	+1"],
+        "labels": ["Floor -1", "Floor  0", "Floor +1"],
         "datasets": [
             {"label": "Utilizzate", "values": [used[k] for k in keys]},
         ],
@@ -260,7 +374,7 @@ def list_announcements():
             payload = load_json(entry)
             payload["id"] = entry.stem
             announcements.append(payload)
-        except Exception as exc:  # pragma: no cover - defensive
+        except (TypeError, AttributeError, OSError, ValueError, KeyError) as exc:
             logger.warning("Impossibile leggere %s: %s", entry, exc)
     announcements.sort(key=lambda item: item.get("start_date", ""), reverse=True)
     return announcements
@@ -305,14 +419,18 @@ def get_token():
 
 
 # === Date helpers ===
+def _parse_intra_dt(date_str):
+    return datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S.000Z").replace(tzinfo=UTC)
+
+
 def format_date(date_str):
-    d = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S.000Z")
+    d = _parse_intra_dt(date_str)
     return d.strftime("%d %B %Y %H:%M")
 
 
 def get_duration(begin, end):
-    d1 = datetime.strptime(begin, "%Y-%m-%dT%H:%M:%S.000Z")
-    d2 = datetime.strptime(end, "%Y-%m-%dT%H:%M:%S.000Z")
+    d1 = _parse_intra_dt(begin)
+    d2 = _parse_intra_dt(end)
     diff = d2 - d1
     return f"{diff.seconds // 3600} ore {(diff.seconds % 3600) // 60} minuti"
 
@@ -325,7 +443,7 @@ def get_filtered_events():
     if not token:
         return []
 
-    now = datetime.now()
+    now = datetime.now(UTC)
     start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=1)
     end_of_range = start_of_today + timedelta(days=config.EVENT_LOOKAHEAD_DAYS)
     params = {
@@ -338,11 +456,7 @@ def get_filtered_events():
     try:
         resp = requests.get(url, headers=headers, params=params, timeout=10)
         resp.raise_for_status()
-        events = [
-            e
-            for e in resp.json()
-            if datetime.strptime(e["begin_at"], "%Y-%m-%dT%H:%M:%S.000Z") > now
-        ]
+        events = [e for e in resp.json() if _parse_intra_dt(e["begin_at"]) > now]
         events.sort(key=lambda e: e["begin_at"])
         save_json(config.FUTURE_EVENTS_FILE, events)
         return events
@@ -356,18 +470,20 @@ events_data = load_json(config.FUTURE_EVENTS_FILE, default=get_filtered_events()
 
 # === Annunci ===
 def get_future_announcements():
-    now = datetime.now()
+    now = datetime.now(UTC)
     announcements = []
     for file in config.ANNOUNCEMENTS_DIR.glob("*.json"):
         ann = load_json(file)
         try:
-            start, end = (
-                datetime.fromisoformat(ann["start_date"]),
-                datetime.fromisoformat(ann["end_date"]),
-            )
+            start = datetime.fromisoformat(ann["start_date"])
+            end = datetime.fromisoformat(ann["end_date"])
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=UTC)
+            if end.tzinfo is None:
+                end = end.replace(tzinfo=UTC)
             if start <= now < end:
                 announcements.append(ann)
-        except (KeyError, ValueError):
+        except (KeyError, ValueError, TypeError):
             continue
     return sorted(announcements, key=lambda x: x["start_date"])
 
@@ -709,7 +825,7 @@ def create_announcement():
             "color": color,
             "link": link,
             "created_by": author,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         save_announcement(announcement_id, payload)
         logger.info(f"{author} ha creato l'annuncio {announcement_id}")
@@ -779,7 +895,7 @@ def edit_announcement(announcement_id):
                 "end_date": end_date,
                 "color": color,
                 "link": link,
-                "updated_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             }
         )
         save_announcement(

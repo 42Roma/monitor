@@ -60,7 +60,7 @@ def check_location(location_id: str):
         response = requests.get(url, timeout=API_TIMEOUT)
         response.raise_for_status()
         payload = response.json()
-    except Exception as exc:
+    except (requests.RequestException, ValueError, TypeError) as exc:
         return "offline", None, exc
 
     return classify_payload(payload), payload, None
@@ -81,8 +81,8 @@ def scan_locations():
             continue
 
         if status == "used":
-            used.append(location_id)
-            user = payload.get("user", "")
+            user = str(payload.get("user") or "").strip()
+            used.append({"location": location_id, "user": user})
             print(f"USED {location_id} ({user})")
         else:
             online.append(location_id)

@@ -2,7 +2,7 @@
 
 import csv
 from collections import Counter
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 try:
@@ -112,7 +112,7 @@ def build_age_distribution(csv_path: Path | None = None):
     """Distribuzione età calcolata da birth_date (doughnut)."""
     path = csv_path or students_birth_csv_path()
     buckets: Counter[str] = Counter()
-    today = date.today()
+    today = datetime.now(UTC).date()
 
     if not path.is_file():
         return {"labels": [], "values": []}

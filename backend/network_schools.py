@@ -1,7 +1,7 @@
 import json
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import requests
 
@@ -15,15 +15,15 @@ logger = logging.getLogger(__name__)
 LOOP_ITEM_SPLIT = re.compile(r'(?=<div data-elementor-type="loop-item")')
 TITLE_RE = re.compile(
     r"card-campus-title.*?<h3[^>]*>\s*<a[^>]*>([^<]+)</a>",
-    re.S,
+    re.DOTALL,
 )
 COUNTRY_RE = re.compile(
     r"card-campus-country.*?<span>([^<]+)</span>",
-    re.S,
+    re.DOTALL,
 )
 LOOP_CONTAINER_RE = re.compile(
     r'<div class="elementor-loop-container elementor-grid">(.*)',
-    re.S,
+    re.DOTALL,
 )
 
 
@@ -59,8 +59,8 @@ def group_schools_by_country(schools):
     for school in schools:
         grouped.setdefault(school["country"], []).append(school["name"])
 
-    for country in grouped:
-        grouped[country] = sorted(set(grouped[country]))
+    for country, names in grouped.items():
+        grouped[country] = sorted(set(names))
 
     return dict(sorted(grouped.items(), key=lambda item: item[0]))
 
@@ -79,7 +79,7 @@ def fetch_schools_from_web():
 def save_schools_payload(schools):
     # type: (List[Dict[str, str]]) -> Dict[str, object]
     payload = {
-        "fetched_at": datetime.utcnow().isoformat() + "Z",
+        "fetched_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "source_url": config.NETWORK_SCHOOLS_URL,
         "schools": schools,
         "by_country": group_schools_by_country(schools),
@@ -113,17 +113,17 @@ def payload_is_stale(payload):
         fetched_at = datetime.strptime(
             str(payload["fetched_at"]).replace("Z", ""),
             "%Y-%m-%dT%H:%M:%S.%f",
-        )
+        ).replace(tzinfo=UTC)
     except ValueError:
         try:
             fetched_at = datetime.strptime(
                 str(payload["fetched_at"]).replace("Z", ""),
                 "%Y-%m-%dT%H:%M:%S",
-            )
+            ).replace(tzinfo=UTC)
         except ValueError:
             return True
     max_age = timedelta(hours=config.NETWORK_SCHOOLS_CACHE_HOURS)
-    return datetime.utcnow() - fetched_at > max_age
+    return datetime.now(UTC) - fetched_at > max_age
 
 
 def refresh_schools(force=False):
@@ -137,7 +137,7 @@ def refresh_schools(force=False):
         if not schools:
             raise ValueError("Nessun campus trovato nella pagina 42network.org")
         return save_schools_payload(schools)
-    except Exception as exc:
+    except (requests.RequestException, OSError, ValueError, TypeError) as exc:
         logger.warning("Fetch campus 42network fallito: %s", exc)
         if cached:
             return cached
